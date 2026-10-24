@@ -1,0 +1,258 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>M360 interactive floor-plan model</title><style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;font:12px Arial,sans-serif;background:#fff;color:#222}#stage{position:absolute;inset:0 0 52px}#stage canvas{display:block;width:100%;height:100%;cursor:grab}#stage canvas:active{cursor:grabbing}.hint{position:absolute;bottom:14px;left:16px;color:#888;font-size:11px;pointer-events:none}#fb3d{display:flex;position:absolute;inset:0;align-items:center;justify-content:center;padding:25px;background:#f4f4f1;color:#777;text-align:center}.tools{position:absolute;bottom:0;left:0;right:0;min-height:52px;border-top:1px solid #ddd;display:flex;align-items:center;justify-content:space-between;padding:8px 16px;gap:12px;background:white}.tools span{font-size:10px;color:#888;text-transform:uppercase}.tools>div{display:flex;gap:6px}.tools button{background:white;border:1px solid #d8d8d5;padding:8px 12px;color:#333;cursor:pointer;font:11px Arial,sans-serif;min-height:34px}.tools button.active{background:#121212;color:white;border-color:#121212}.tools button:focus-visible{outline:2px solid #ff6044;outline-offset:2px}@media(max-width:500px){.tools{padding:8px}.tools span{display:none}.tools>div{width:100%}.tools button{flex:1}.hint{font-size:10px}}
+</style></head><body><div id="stage"><div id="fb3d">The interactive model needs a browser with 3D graphics enabled.</div><p class="hint"></p></div><div class="tools"><span>Previous M360 floor-plan model</span><div><button data-view="orbit" class="active">3D view</button><button data-view="plan">Plan view</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="zoom-out" aria-label="Zoom out">−</button><button data-view="reset">Reset</button></div></div><script src="three-r128.min.js"></script><script>
+(function(){
+function boot(){
+/* ---------- the interactive model, ported from the technical spec, data at the final schedule ---------- */
+(function(){
+  var stage=document.getElementById('stage');
+  var fb=document.getElementById('fb3d');
+  function fail(){ if(fb){ fb.style.display='flex'; }
+    var lg=stage.querySelector('.legend'); if(lg) lg.style.display='none';
+    var ht=stage.querySelector('.hint'); if(ht) ht.style.display='none'; }
+  if(!window.THREE||!stage){ fail(); return; }
+  var RED=0xFC3000, INK=0x141414, GRAY=0x9aa0a6, HAIR=0xd8d4ce;
+  var H=4.57, T=0.12, W=6.365, L=19.25;
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color(0xffffff);
+  var renderer;
+  try{
+    renderer=new THREE.WebGLRenderer({antialias:true});
+  }catch(err){ fail(); return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  stage.insertBefore(renderer.domElement,stage.firstChild);
+  if(fb) fb.style.display='none';
+
+  var camera=new THREE.PerspectiveCamera(42,1,0.1,300);
+  var target=new THREE.Vector3(9.6,0.7,3.0);
+  var radius=25, theta=0.95, phi=0.72;
+  function placeCam(){
+    camera.position.set(
+      target.x+radius*Math.sin(phi)*Math.cos(theta),
+      target.y+radius*Math.cos(phi),
+      target.z+radius*Math.sin(phi)*Math.sin(theta));
+    camera.lookAt(target);
+  }
+  var narrowModel=false;
+  function size(){
+    var w=stage.clientWidth,h=stage.clientHeight;
+    var n=w/h<1.5;if(n!==narrowModel){radius=n?32:25;theta=.95;phi=.72;}narrowModel=n;camera.fov=n?50:42;camera.aspect=w/h;camera.updateProjectionMatrix();
+    renderer.setSize(w,h);
+  }
+  var grid=new THREE.GridHelper(60,60,0xeceae6,0xf3f1ee);
+  grid.position.set(9.6,0,3.0); scene.add(grid);
+
+  function edgeBox(w,h,d,x,y,z,color,edgeColor,opacity){
+    var g=new THREE.BoxGeometry(w,h,d);
+    var mesh=new THREE.Mesh(g,new THREE.MeshBasicMaterial(
+      {color:color,transparent:opacity<1,opacity:opacity}));
+    mesh.position.set(x,y,z); scene.add(mesh);
+    var e=new THREE.LineSegments(new THREE.EdgesGeometry(g),
+      new THREE.LineBasicMaterial({color:edgeColor}));
+    e.position.copy(mesh.position); scene.add(e);
+  }
+  edgeBox(L,0.10,W,L/2,-0.03,W/2,0xf7f4ee,0xcfc8bd,1);
+  var WALL=0xefece7;
+  // solid demising wall with the columns, left when facing the entry
+  edgeBox(L+2*T,H,T, L/2,H/2,-T/2, WALL,INK,1);
+  // fluted glass masking, full open edge, right when facing the entry
+  edgeBox(L+2*T,H,T, L/2,H/2,W+T/2, 0xdfe9f0,0xFC3000,0.4);
+  // core end wall, solid
+  edgeBox(T,H,W+2*T, L+T/2,H/2,W/2, WALL,INK,1);
+  // glass entry end with centred 1.8 m opening
+  edgeBox(T,H,2.2825, -T/2,H/2,1.14125, 0xcfe0ea,0x7d97a6,0.35);
+  edgeBox(T,H,2.2825, -T/2,H/2,5.22375, 0xcfe0ea,0x7d97a6,0.35);
+  (function(){
+    var g=new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0,0.015,2.2825),new THREE.Vector3(0,0.015,4.0825)]);
+    scene.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:RED})));
+  })();
+  // grid columns in the solid wall, opposite the fluted glass, TBV
+  edgeBox(0.5,H,0.5, 3.45,H/2,0.13, RED,0x8f1f04,1);
+  edgeBox(0.5,H,0.5, 14.25,H/2,0.13, RED,0x8f1f04,1);
+  // LED panel on the core wall, 3/4 of wall width
+  edgeBox(0.08,2.69,4.774, L-0.09,2.10,W/2, 0x1a1a1a,0x000000,1);
+  // brass coachline, threshold to the ring
+  (function(){
+    var g=new THREE.BufferGeometry().setFromPoints(
+      [new THREE.Vector3(0.5,0.015,3.1825),new THREE.Vector3(13.7,0.015,3.1825)]);
+    scene.add(new THREE.Line(g,new THREE.LineBasicMaterial({color:0xB08A3E})));
+  })();
+
+  // programme, final layout
+  function patch(x0,x1,z0,z1,col){
+    edgeBox(x1-x0,0.018,z1-z0,(x0+x1)/2,0.062,(z0+z1)/2,col,0xbfb9b0,1);
+  }
+  patch(0.9,3.3,0.15,0.95,0xEDE6D8);
+  patch(0.7,1.6,5.465,6.365,0xDFE8E0);
+  patch(5.7,9.3,3.6,6.365,0xE2E2EA);
+  patch(5.9,9.2,0,0.4,0xF2E3DB);
+  patch(9.7,10.9,5.6,6.3,0xE8DFE6);
+  patch(11.5,13.1,0.365,2.765,0xF4ECD9);
+  // circular car zone at the end + car at 30 degrees, LED behind
+  (function(){
+    var disc=new THREE.Mesh(new THREE.CircleGeometry(2.9,64),
+      new THREE.MeshBasicMaterial({color:0xE7DCC9}));
+    disc.rotation.x=-Math.PI/2; disc.position.set(16.05,0.064,3.1825); scene.add(disc);
+    var ringPts=[];
+    for(var i=0;i<=64;i++){var a=i/64*Math.PI*2;
+      ringPts.push(new THREE.Vector3(16.05+2.8*Math.cos(a),0.07,3.1825+2.8*Math.sin(a)));}
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(ringPts),
+      new THREE.LineBasicMaterial({color:0xB08A3E})));
+    var g=new THREE.BoxGeometry(5.34,1.723,2.164);
+    var car=new THREE.Mesh(g,new THREE.MeshBasicMaterial({color:0x23211f}));
+    car.position.set(16.05,0.9,3.1825); car.rotation.y=Math.PI/6; scene.add(car);
+    var ce=new THREE.LineSegments(new THREE.EdgesGeometry(g),
+      new THREE.LineBasicMaterial({color:0x000000}));
+    ce.position.copy(car.position); ce.rotation.copy(car.rotation); scene.add(ce);
+  })();
+  // reception desk + backlit backdrop, solid side at arrival
+  edgeBox(2.4,1.05,0.8, 2.1,0.525,0.55, 0x4a453f,0x2b2825,1);
+  edgeBox(3.0,3.6,0.1, 2.2,1.8,0.05, 0xF6EBDA,0xC9A97C,1);
+  // art plinth + three bronze rods, fluted side at arrival
+  edgeBox(0.9,1.2,0.9, 1.15,0.6,5.915, 0x8a8578,0x5c574d,1);
+  (function(){
+    [1.5,1.8,2.1].forEach(function(h,i){
+      var rod=new THREE.Mesh(new THREE.CylinderGeometry(0.0175,0.0175,h,16),
+        new THREE.MeshBasicMaterial({color:0x6b543a}));
+      rod.position.set(0.95+i*0.2,1.2+h/2,5.915); scene.add(rod);
+    });
+  })();
+  // vitrine wall, twelve niches, solid side
+  edgeBox(3.3,2.7,0.35, 7.55,1.35,0.175, 0x4a453f,0x2b2825,1);
+  // salon set on the fluted side
+  edgeBox(2.8,0.72,0.9, 7.5,0.36,5.55, 0x4a453f,0x2b2825,1);
+  edgeBox(3.0,2.0,0.06, 7.5,2.0,6.3, 0xEDE6D8,0x8a8578,1);
+  (function(){
+    var p1=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.3,0.4,32),
+      new THREE.MeshBasicMaterial({color:0x7a5c3e}));
+    p1.position.set(6.6,0.2,4.5); scene.add(p1);
+    var p2=new THREE.Mesh(new THREE.CylinderGeometry(0.225,0.225,0.48,32),
+      new THREE.MeshBasicMaterial({color:0x7a5c3e}));
+    p2.position.set(8.3,0.24,4.4); scene.add(p2);
+  })();
+  // tea trolley bay on the fluted side
+  edgeBox(0.9,0.95,0.55, 10.3,0.475,5.95, 0x7a5c3e,0x4d3a27,1);
+  // commissioning counter, pendant, screen, stools, solid side
+  (function(){
+    var tbl=new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.04,40),
+      new THREE.MeshBasicMaterial({color:0x3a3631}));
+    tbl.position.set(12.3,0.52,1.8); scene.add(tbl);
+    var pen=new THREE.Mesh(new THREE.CylinderGeometry(0.7,0.7,0.5,40),
+      new THREE.MeshBasicMaterial({color:0xEDE6D8}));
+    pen.position.set(12.3,2.45,1.8); scene.add(pen);
+    [11.5,13.1].forEach(function(x){
+      var st=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.14,0.76,24),
+        new THREE.MeshBasicMaterial({color:0x8a8578}));
+      st.position.set(x,0.38,2.7); scene.add(st);
+    });
+  })();
+  edgeBox(1.6,0.9,0.07, 12.3,1.5,0.045, 0x101010,0x000000,1);
+
+  function textCanvas(main,sub,mainColor,subColor){
+    var c=document.createElement('canvas'), x=c.getContext('2d'), S=3;
+    var f1=(26*S)+'px "Space Mono","SF Mono",Menlo,Consolas,monospace';
+    var f2=(17*S)+'px "Space Mono","SF Mono",Menlo,Consolas,monospace';
+    x.font='700 '+f1; var w1=x.measureText(main).width;
+    x.font=f2; var w2=sub?x.measureText(sub).width:0;
+    var w=Math.max(w1,w2)+34*S, h=(sub?64:44)*S;
+    c.width=w; c.height=h;
+    x.fillStyle='rgba(255,255,255,0.94)'; x.fillRect(0,0,w,h);
+    x.strokeStyle='#e7e3de'; x.lineWidth=S; x.strokeRect(0,0,w,h);
+    x.textAlign='center'; x.textBaseline='middle';
+    x.font='700 '+f1; x.fillStyle=mainColor; x.fillText(main,w/2,(sub?21:22)*S);
+    if(sub){ x.font=f2; x.fillStyle=subColor; x.fillText(sub,w/2,47*S); }
+    return {canvas:c,w:w,h:h};
+  }
+  function makeLabel(main,sub,opts){
+    opts=opts||{};
+    var t=textCanvas(main,sub,opts.mainColor||'#141414',opts.subColor||'#8f959a');
+    var tex=new THREE.CanvasTexture(t.canvas); tex.minFilter=THREE.LinearFilter;
+    var sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false}));
+    var hW=opts.h||(sub?0.95:0.66);
+    sp.scale.set(hW*t.w/t.h,hW,1); sp.renderOrder=10;
+    return sp;
+  }
+  // Clear labels for the capability preview; source geometry is retained.
+  [['ARRIVAL',1.5,1.8,3.0],['LOUNGE',7.5,1.9,5.2],['MEETING',12.3,2.8,1.8],['DISPLAY',16.05,2.8,3.18]].forEach(function(v){
+    var lab=makeLabel(v[0],null,{h:0.5});lab.position.set(v[1],v[2],v[3]);scene.add(lab);
+  });
+  var dragging=false,lx=0,ly=0,idle=0,engaged=false;
+  var pts={};
+  function pinchDist(){
+    var ids=Object.keys(pts);
+    if(ids.length<2) return 0;
+    var a=pts[ids[0]], b=pts[ids[1]];
+    return Math.hypot(a[0]-b[0],a[1]-b[1]);
+  }
+  var el=renderer.domElement;
+  el.style.touchAction='pan-y';
+  el.addEventListener('pointerdown',function(e){
+    pts[e.pointerId]=[e.clientX,e.clientY];
+    try{el.setPointerCapture(e.pointerId);}catch(err){}
+    dragging=true; engaged=true; lx=e.clientX; ly=e.clientY; idle=0;
+  });
+  function drop(e){ delete pts[e.pointerId]; if(Object.keys(pts).length===0) dragging=false; }
+  window.addEventListener('pointerup',drop);
+  window.addEventListener('pointercancel',drop);
+  el.addEventListener('mouseleave',function(){engaged=false;});
+  window.addEventListener('pointermove',function(e){
+    if(!(e.pointerId in pts)){ if(!dragging) return; }
+    var prev=pinchDist();
+    if(e.pointerId in pts) pts[e.pointerId]=[e.clientX,e.clientY];
+    var now=pinchDist();
+    if(prev>0&&now>0){
+      radius=Math.min(60,Math.max(7,radius*prev/now));
+      idle=0; return;
+    }
+    if(!dragging)return;
+    theta+=(e.clientX-lx)*0.006;
+    phi=Math.min(1.45,Math.max(0.25,phi-(e.clientY-ly)*0.005));
+    lx=e.clientX; ly=e.clientY; idle=0;
+  });
+  var hintEl=stage.querySelector('.hint'), hintT=null;
+  var hintBase='Drag to turn · Pinch to zoom';
+  if(hintEl) hintEl.textContent=hintBase;
+  el.addEventListener('wheel',function(e){
+    if(e.ctrlKey||e.metaKey){
+      e.preventDefault();
+      radius=Math.min(60,Math.max(7,radius*(1+e.deltaY*0.0012)));
+      idle=0;
+    } else if(hintEl){
+      hintEl.textContent='CLICK THE MODEL FIRST, THEN SCROLL · OR CTRL + SCROLL';
+      clearTimeout(hintT);
+      hintT=setTimeout(function(){hintEl.textContent=hintBase;},1600);
+    }
+  },{passive:false});
+  el.addEventListener('dblclick',function(){
+    radius=25; theta=0.95; phi=0.72;
+    if(stage.clientWidth/stage.clientHeight<1.5){theta=0.95;phi=0.72;radius=32;}
+    idle=0;
+  });
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function tick(){
+    requestAnimationFrame(tick);
+    if(window.__halt) return;
+    idle++;
+    
+    placeCam(); renderer.render(scene,camera);
+  }
+  window.addEventListener('resize',size);
+  size();
+  if(stage.clientWidth/stage.clientHeight<1.5){
+    theta=0.95; phi=0.72; radius=32;
+    camera.fov=50; camera.updateProjectionMatrix();
+  }
+  placeCam(); tick();
+  window.__scene=scene;
+  window.__camera=camera;
+  window.__zoom=function(d){radius=Math.min(60,Math.max(7,radius+d));idle=0;placeCam();};
+  window.__cam=function(t,p,r){ theta=t; phi=p; radius=r; idle=0; placeCam(); };
+  window.__shot=function(){ placeCam(); renderer.render(scene,camera); return renderer.domElement.toDataURL('image/png'); };
+})();
+}
+if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded',boot); } else { boot(); }
+})();
+</script><script>
+var cameraRadius=innerWidth<600?32:25;document.querySelectorAll('[data-view]').forEach(function(b){b.addEventListener('click',function(){var p=b.dataset.view==='plan'?0.08:0.72;var r=b.dataset.view==='plan'?27:(innerWidth<600?32:25);window.__cam(0.95,p,r);cameraRadius=r;document.querySelectorAll('[data-view]').forEach(function(x){x.classList.toggle('active',x.dataset.view===(b.dataset.view==='reset'?'orbit':b.dataset.view));});});});document.getElementById('zoom-in').onclick=function(){window.__zoom(-3);};document.getElementById('zoom-out').onclick=function(){window.__zoom(3);};
+</script></body></html>
